@@ -47,3 +47,20 @@ func TestContainer(t *testing.T) {
 		assert.NotContains(t, running, id)
 	})
 }
+
+func TestCluster(t *testing.T) {
+	requireDocker(t)
+	ctx := dlog.NewTestContext(t, false)
+	WithMachineLock(ctx, func(ctx context.Context) {
+		os.Setenv("DTEST_REGISTRY", DockerRegistry(ctx)) // Prevent extra calls to dtest.RegistryUp() which may panic
+		defer func() {
+			RegistryDown(ctx)
+		}()
+
+		kubeconfig := Kubeconfig(ctx)
+		defer func() {
+			K3sDown(ctx)
+			assert.NoError(t, os.Remove(kubeconfig))
+		}()
+	})
+}
