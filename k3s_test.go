@@ -8,32 +8,59 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/datawire/dlib/dexec"
 	"github.com/datawire/dlib/dlog"
 )
 
-func TestMain(m *testing.M) {
-	// Skip the test if running in CI and not on linux, because we won't be able to run the container other than on linux
-	isCi := os.Getenv("CI")
-	if isCi == "true" && runtime.GOOS != "linux" {
+// requireDocker calls t.SkipNow() if we're running in CI and Docker isn't available.
+func requireDocker(t *testing.T) {
+	if os.Getenv("CI") == "" {
+		// Always run when not in CI.
 		return
 	}
-
-	// we get the lock to make sure we are the only thing running
-	// because the nat tests interfere with docker functionality
-	WithMachineLock(context.TODO(), func(ctx context.Context) {
-		os.Exit(m.Run())
-	})
+	docker, err := dexec.LookPath("docker")
+	if docker == "" || err != nil {
+		if runtime.GOOS == "linux" {
+			t.Fatal("The CI setup is broken, it doesn't even have docker on Linux")
+		}
+		t.Log("Skipping because 'docker' is not installed")
+		t.SkipNow()
+	}
+	if runtime.GOOS == "windows" {
+		t.Log("Skipping because 'docker' is set to run Windows containers not Linux containers")
+		t.SkipNow()
+	}
 }
 
 func TestContainer(t *testing.T) {
+	requireDocker(t)
 	ctx := dlog.NewTestContext(t, false)
-	id := dockerUp(ctx, "dtest-test-tag", "nginx")
+	WithMachineLock(ctx, func(ctx context.Context) {
+		id := dockerUp(ctx, "dtest-test-tag", "nginx")
 
-	running := dockerPs(ctx)
-	assert.Contains(t, running, id)
+		running := dockerPs(ctx)
+		assert.Contains(t, running, id)
 
-	dockerKill(ctx, id)
+		dockerKill(ctx, id)
 
-	running = dockerPs(ctx)
-	assert.NotContains(t, running, id)
+		running = dockerPs(ctx)
+		assert.NotContains(t, running, id)
+	})
+}
+
+func TestCluster(t *testing.T) {
+	requireDocker(t)
+	ctx := dlog.NewTestContext(t, false)
+	WithMachineLock(ctx, func(ctx context.Context) {
+		os.Setenv("DTEST_REGISTRY", DockerRegistry(ctx)) // Prevent extra calls to dtest.RegistryUp() which may panic
+		defer func() {
+			RegistryDown(ctx)
+		}()
+
+		kubeconfig := Kubeconfig(ctx)
+		defer func() {
+			K3sDown(ctx)
+			assert.NoError(t, os.Remove(kubeconfig))
+		}()
+	})
 }
