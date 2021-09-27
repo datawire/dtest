@@ -297,7 +297,7 @@ kubeconfig does not exist: %s
 `
 
 // Kubeconfig returns a path referencing a kubeconfig file suitable for use in tests.
-func Kubeconfig(ctx context.Context) string {
+func Kubeconfig(ctx context.Context, k3sExtraFlags ...string) string {
 	kubeconfig := os.Getenv(dtestKubeconfig)
 	if kubeconfig != "" {
 		if _, err := os.Stat(kubeconfig); os.IsNotExist(err) {
@@ -308,7 +308,7 @@ func Kubeconfig(ctx context.Context) string {
 		return kubeconfig
 	}
 
-	K3sUp(ctx)
+	K3sUp(ctx, k3sExtraFlags...)
 
 	dlog.Printf(ctx, "Polling for k3s to be ready...")
 	for ctx.Err() == nil {
@@ -325,11 +325,11 @@ func Kubeconfig(ctx context.Context) string {
 
 // K3sUp will launch if necessary and return the docker id of a
 // container running a k3s cluster.
-func K3sUp(ctx context.Context) string {
+func K3sUp(ctx context.Context, k3sExtraFlags ...string) string {
 	regid := RegistryUp(ctx)
 	dlog.Printf(ctx, "Bringing up k3s...")
-	return dockerUp(ctx, "k3s",
-		// `docker run` flags
+
+	dockerRunFlags := []string{
 		"--privileged",
 		"--network=container:"+regid,
 		"--volume=/dev/mapper:/dev/mapper",
@@ -345,11 +345,17 @@ func K3sUp(ctx context.Context) string {
 			fi
 			exec /bin/k3s "$@"
 		`, "--",
-		// `k3s` args
+	}
+
+	k3sFlags := []string{
 		"server",
 		"--node-name=localhost",
 		"--no-deploy=traefik",
-		"--kube-proxy-arg=conntrack-max-per-core=0")
+		"--kube-proxy-arg=conntrack-max-per-core=0",
+	}
+
+	k3sFlags = append(k3sFlags, k3sExtraFlags...)
+	return dockerUp(ctx, "k3s", append(dockerRunFlags, k3sFlags...)...)
 }
 
 // K3sDown shuts down the k3s cluster.
