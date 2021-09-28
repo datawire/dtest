@@ -2,6 +2,7 @@ package dtest
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"runtime"
 	"testing"
@@ -50,17 +51,28 @@ func TestContainer(t *testing.T) {
 
 func TestCluster(t *testing.T) {
 	requireDocker(t)
-	ctx := dlog.NewTestContext(t, false)
-	WithMachineLock(ctx, func(ctx context.Context) {
-		os.Setenv("DTEST_REGISTRY", DockerRegistry(ctx)) // Prevent extra calls to dtest.RegistryUp() which may panic
-		defer func() {
-			RegistryDown(ctx)
-		}()
+	for minor := range k3sImages {
+		ver := KubeVersion{minor}
+		t.Run(fmt.Sprintf("1.%d", minor), func(t *testing.T) {
+			ctx := dlog.NewTestContext(t, false)
+			WithMachineLock(ctx, func(ctx context.Context) {
+				defer func() {
+					if r := recover(); r != nil {
+						t.Fatal(r)
+					}
+				}()
+				K3sDown(ctx)
+				os.Setenv("DTEST_REGISTRY", DockerRegistry(ctx)) // Prevent extra calls to dtest.RegistryUp() which may panic
+				defer func() {
+					RegistryDown(ctx)
+				}()
 
-		kubeconfig := Kubeconfig(ctx)
-		defer func() {
-			K3sDown(ctx)
-			assert.NoError(t, os.Remove(kubeconfig))
-		}()
-	})
+				kubeconfig := KubeVersionConfig(ctx, ver)
+				defer func() {
+					K3sDown(ctx)
+					assert.NoError(t, os.Remove(kubeconfig))
+				}()
+			})
+		})
+	}
 }
