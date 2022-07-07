@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/datawire/dlib/dexec"
 	"github.com/datawire/dlib/dlog"
@@ -37,14 +38,17 @@ func TestContainer(t *testing.T) {
 	requireDocker(t)
 	ctx := dlog.NewTestContext(t, false)
 	WithMachineLock(ctx, func(ctx context.Context) {
-		id := dockerUp(ctx, "dtest-test-tag", "nginx")
+		id, err := dockerUp(ctx, "dtest-test-tag", "nginx")
+		require.NoError(t, err)
 
-		running := dockerPs(ctx)
+		running, err := dockerPs(ctx)
+		require.NoError(t, err)
 		assert.Contains(t, running, id)
 
-		dockerKill(ctx, id)
+		require.NoError(t, dockerKill(ctx, id))
 
-		running = dockerPs(ctx)
+		running, err = dockerPs(ctx)
+		require.NoError(t, err)
 		assert.NotContains(t, running, id)
 	})
 }
@@ -61,15 +65,21 @@ func TestCluster(t *testing.T) {
 						t.Fatal(r)
 					}
 				}()
-				K3sDown(ctx)
-				os.Setenv("DTEST_REGISTRY", DockerRegistry(ctx)) // Prevent extra calls to dtest.RegistryUp() which may panic
+				_, err := K3sDown(ctx)
+				require.NoError(t, err)
+				registry, err := DockerRegistry(ctx)
+				require.NoError(t, err)
+				os.Setenv("DTEST_REGISTRY", registry) // Prevent extra calls to dtest.RegistryUp() which may panic
 				defer func() {
-					RegistryDown(ctx)
+					_, err := RegistryDown(ctx)
+					require.NoError(t, err)
 				}()
 
-				kubeconfig := KubeVersionConfig(ctx, ver)
+				kubeconfig, err := KubeVersionConfig(ctx, ver)
+				require.NoError(t, err)
 				defer func() {
-					K3sDown(ctx)
+					_, err := K3sDown(ctx)
+					require.NoError(t, err)
 					assert.NoError(t, os.Remove(kubeconfig))
 				}()
 			})
